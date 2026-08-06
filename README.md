@@ -176,6 +176,7 @@ Two limits to be honest about:
 pip install -e ".[dev]"
 pytest
 ruff check .
+./scripts/e2e.sh   # every feature end-to-end through the CLI, offline
 ```
 
 ## License
