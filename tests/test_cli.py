@@ -72,3 +72,33 @@ def test_verify_rejects_wrong_signer(pkg, tmp_path):
     manifest = tmp_path / "m.json"
     main(["seal", str(pkg), "--out", str(manifest), "--sign", str(priv)])
     assert main(["verify", str(pkg), "--manifest", str(manifest), "--pubkey", str(other_pub)]) == 1
+
+
+def test_timestamp_request_apply_verify(pkg, tmp_path):
+    pytest.importorskip("asn1crypto")
+    import json
+
+    from tests.test_timestamp import issue_token
+
+    manifest = tmp_path / "m.json"
+    main(["seal", str(pkg), "--out", str(manifest)])
+
+    req = tmp_path / "m.tsq"
+    assert main(["timestamp", "request", str(manifest), "--out", str(req)]) == OK
+    assert req.exists() and req.stat().st_size > 0
+
+    manifest_id = json.loads(manifest.read_text())["id"]
+    tsr = tmp_path / "resp.tsr"
+    tsr.write_bytes(issue_token(manifest_id))
+
+    assert main(["timestamp", "apply", str(manifest), "--token", str(tsr)]) == OK
+    assert main(["timestamp", "verify", str(manifest)]) == OK
+    # A timestamp is checked as part of a normal verify too.
+    assert main(["verify", str(pkg), "--manifest", str(manifest)]) == OK
+
+
+def test_timestamp_verify_unstamped_is_failure(pkg, tmp_path):
+    pytest.importorskip("asn1crypto")
+    manifest = tmp_path / "m.json"
+    main(["seal", str(pkg), "--out", str(manifest)])
+    assert main(["timestamp", "verify", str(manifest)]) == 1

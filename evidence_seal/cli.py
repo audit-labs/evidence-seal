@@ -111,9 +111,16 @@ def _cmd_verify(args) -> int:
         status = FAILED
 
     # Verify a signature when present, or when the caller supplied a key to trust.
-    if manifest.get("signature") or args.pubkey:
-        sig_ok = _verify_sig_cli(manifest, args.pubkey)
-        if not sig_ok:
+    if (manifest.get("signature") or args.pubkey) and not _verify_sig_cli(manifest, args.pubkey):
+        status = FAILED
+
+    # Verify an embedded timestamp when present.
+    if manifest.get("timestamp"):
+        from .timestamp import verify_timestamp
+
+        ts_ok, ts_message = verify_timestamp(manifest)
+        print(f"  timestamp {'OK' if ts_ok else 'FAIL'}: {ts_message}")
+        if not ts_ok:
             status = FAILED
 
     if status == OK:
@@ -175,6 +182,72 @@ def _cmd_sign(args) -> int:
     return OK
 
 
+def _cmd_ts_request(args) -> int:
+    from .timestamp import build_request
+
+    try:
+        manifest = load_manifest(args.manifest)
+        request = build_request(manifest["id"])
+    except (RuntimeError, FileNotFoundError, ValueError, KeyError, OSError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return USAGE
+    out = args.out or f"{args.manifest}.tsq"
+    Path(out).write_bytes(request)
+    print(f"wrote timestamp request for id {manifest['id'][:16]}… -> {out}", file=sys.stderr)
+    print("submit it to a TSA, e.g.:", file=sys.stderr)
+    print(
+        f"  curl -sS -H 'Content-Type: application/timestamp-query' "
+        f"--data-binary @{out} <TSA_URL> -o {out.removesuffix('.tsq')}.tsr",
+        file=sys.stderr,
+    )
+    return OK
+
+
+def _cmd_ts_apply(args) -> int:
+    from .timestamp import apply_timestamp, load_der
+
+    try:
+        manifest = load_manifest(args.manifest)
+        stamped = apply_timestamp(manifest, load_der(args.token))
+    except (RuntimeError, FileNotFoundError, ValueError, OSError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return USAGE
+    write_manifest(stamped, args.out or args.manifest)
+    print(f"timestamped {args.out or args.manifest} at {stamped['timestamp']['gen_time']}", file=sys.stderr)
+    return OK
+
+
+def _cmd_ts_submit(args) -> int:
+    from .timestamp import apply_timestamp, build_request, submit
+
+    try:
+        manifest = load_manifest(args.manifest)
+        response = submit(build_request(manifest["id"]), args.tsa, timeout=args.timeout)
+        stamped = apply_timestamp(manifest, response)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return FAILED
+    except (RuntimeError, FileNotFoundError, KeyError, OSError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return USAGE
+    write_manifest(stamped, args.out or args.manifest)
+    print(f"timestamped by {args.tsa} at {stamped['timestamp']['gen_time']}", file=sys.stderr)
+    return OK
+
+
+def _cmd_ts_verify(args) -> int:
+    from .timestamp import verify_timestamp
+
+    try:
+        manifest = load_manifest(args.manifest)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"error: cannot read manifest: {exc}", file=sys.stderr)
+        return USAGE
+    ok, message = verify_timestamp(manifest)
+    print(f"timestamp {'OK' if ok else 'FAIL'}: {message}")
+    return OK if ok else FAILED
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="evidence-seal",
@@ -213,7 +286,35 @@ def _build_parser() -> argparse.ArgumentParser:
     p_sign.add_argument("--out", help="write here instead of overwriting the manifest")
     p_sign.set_defaults(func=_cmd_sign)
 
+    _add_timestamp_commands(sub)
     return parser
+
+
+def _add_timestamp_commands(sub) -> None:
+    p_ts = sub.add_parser("timestamp", help="RFC 3161 trusted timestamping of a manifest")
+    ts = p_ts.add_subparsers(dest="ts_action", required=True)
+
+    p_req = ts.add_parser("request", help="write a TimeStampReq (.tsq) for the manifest id")
+    p_req.add_argument("manifest")
+    p_req.add_argument("--out", help="request path (default: <manifest>.tsq)")
+    p_req.set_defaults(func=_cmd_ts_request)
+
+    p_apply = ts.add_parser("apply", help="bind a TSA response/token into the manifest")
+    p_apply.add_argument("manifest")
+    p_apply.add_argument("--token", required=True, metavar="TSR", help="TSA response or token (DER)")
+    p_apply.add_argument("--out", help="write here instead of overwriting the manifest")
+    p_apply.set_defaults(func=_cmd_ts_apply)
+
+    p_submit = ts.add_parser("submit", help="request, POST to a TSA, and bind in one step")
+    p_submit.add_argument("manifest")
+    p_submit.add_argument("--tsa", required=True, metavar="URL", help="RFC 3161 TSA endpoint")
+    p_submit.add_argument("--timeout", type=float, default=30.0, help="network timeout (seconds)")
+    p_submit.add_argument("--out", help="write here instead of overwriting the manifest")
+    p_submit.set_defaults(func=_cmd_ts_submit)
+
+    p_tsv = ts.add_parser("verify", help="verify the manifest's embedded timestamp")
+    p_tsv.add_argument("manifest")
+    p_tsv.set_defaults(func=_cmd_ts_verify)
 
 
 def main(argv: list[str] | None = None) -> int:

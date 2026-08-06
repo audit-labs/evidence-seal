@@ -19,8 +19,9 @@ from . import ALGORITHM, MANIFEST_VERSION, __version__
 from .hashing import hash_bytes, hash_file, merkle_root
 
 # Keys excluded from the canonical bytes the id is computed over. The id cannot
-# cover itself, and a signature is applied *to* the id afterwards.
-_ID_EXCLUDED = ("id", "signature")
+# cover itself; a signature and a timestamp are both applied *to* the id
+# afterwards, so they sit outside it and compose independently of each other.
+_ID_EXCLUDED = ("id", "signature", "timestamp")
 
 
 def iter_files(
