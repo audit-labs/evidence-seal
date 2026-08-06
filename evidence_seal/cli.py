@@ -118,7 +118,8 @@ def _cmd_verify(args) -> int:
     if manifest.get("timestamp"):
         from .timestamp import verify_timestamp
 
-        ts_ok, ts_message = verify_timestamp(manifest)
+        cert = Path(args.tsa_cert).read_bytes() if args.tsa_cert else None
+        ts_ok, ts_message = verify_timestamp(manifest, tsa_cert=cert)
         print(f"  timestamp {'OK' if ts_ok else 'FAIL'}: {ts_message}")
         if not ts_ok:
             status = FAILED
@@ -240,10 +241,11 @@ def _cmd_ts_verify(args) -> int:
 
     try:
         manifest = load_manifest(args.manifest)
+        cert = Path(args.tsa_cert).read_bytes() if args.tsa_cert else None
     except (FileNotFoundError, ValueError) as exc:
         print(f"error: cannot read manifest: {exc}", file=sys.stderr)
         return USAGE
-    ok, message = verify_timestamp(manifest)
+    ok, message = verify_timestamp(manifest, tsa_cert=cert)
     print(f"timestamp {'OK' if ok else 'FAIL'}: {message}")
     return OK if ok else FAILED
 
@@ -269,6 +271,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p_verify.add_argument("directory")
     p_verify.add_argument("--manifest", help="manifest path (default: <dir>.manifest.json)")
     p_verify.add_argument("--pubkey", metavar="PEM", help="require a signature by this public key")
+    p_verify.add_argument(
+        "--tsa-cert", metavar="CERT", help="verify the embedded timestamp against this TSA certificate"
+    )
     p_verify.set_defaults(func=_cmd_verify)
 
     p_chain = sub.add_parser("chain", help="verify manifests link oldest -> newest")
@@ -314,6 +319,9 @@ def _add_timestamp_commands(sub) -> None:
 
     p_tsv = ts.add_parser("verify", help="verify the manifest's embedded timestamp")
     p_tsv.add_argument("manifest")
+    p_tsv.add_argument(
+        "--tsa-cert", metavar="CERT", help="also verify the token's CMS signature against this cert"
+    )
     p_tsv.set_defaults(func=_cmd_ts_verify)
 
 

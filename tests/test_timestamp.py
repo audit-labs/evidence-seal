@@ -60,6 +60,104 @@ def issue_token(imprint_hex: str, gen_time=None, as_response=True) -> bytes:
     ).dump()
 
 
+def issue_signed_token(imprint_hex, gen_time=None, timestamping_eku=True, validity=None):
+    """Mint a genuinely CMS-signed token; return ``(response_der, cert_pem)``.
+
+    Acts as a real (self-signed) TSA so full signature verification can be
+    exercised offline.
+    """
+    import datetime
+
+    from asn1crypto import x509 as a1x509
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import padding, rsa
+    from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
+
+    gen_time = gen_time or datetime.datetime(2026, 8, 6, 9, 0, tzinfo=datetime.timezone.utc)
+    not_before, not_after = validity or (
+        datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc),
+        datetime.datetime(2030, 1, 1, tzinfo=datetime.timezone.utc),
+    )
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Test TSA")])
+    builder = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(4242)
+        .not_valid_before(not_before)
+        .not_valid_after(not_after)
+    )
+    if timestamping_eku:
+        builder = builder.add_extension(
+            x509.ExtendedKeyUsage([ExtendedKeyUsageOID.TIME_STAMPING]), critical=True
+        )
+    cert = builder.sign(key, hashes.SHA256())
+    cert_der = cert.public_bytes(serialization.Encoding.DER)
+    cert_pem = cert.public_bytes(serialization.Encoding.PEM)
+
+    imprint = tsp.MessageImprint(
+        {
+            "hash_algorithm": algos.DigestAlgorithm({"algorithm": "sha256"}),
+            "hashed_message": bytes.fromhex(imprint_hex),
+        }
+    )
+    tst = tsp.TSTInfo(
+        {
+            "version": "v1",
+            "policy": "1.2.3.4.5",
+            "message_imprint": imprint,
+            "serial_number": 7,
+            "gen_time": gen_time,
+        }
+    )
+    econtent = tst.dump()
+
+    import hashlib
+
+    signed_attrs = cms.CMSAttributes(
+        [
+            cms.CMSAttribute({"type": "content_type", "values": ["tst_info"]}),
+            cms.CMSAttribute(
+                {"type": "message_digest", "values": [core.OctetString(hashlib.sha256(econtent).digest())]}
+            ),
+        ]
+    )
+    signature = key.sign(signed_attrs.untag().dump(), padding.PKCS1v15(), hashes.SHA256())
+    signer_info = cms.SignerInfo(
+        {
+            "version": "v1",
+            "sid": cms.SignerIdentifier(
+                {
+                    "issuer_and_serial_number": cms.IssuerAndSerialNumber(
+                        {"issuer": a1x509.Certificate.load(cert_der).issuer, "serial_number": 4242}
+                    )
+                }
+            ),
+            "digest_algorithm": algos.DigestAlgorithm({"algorithm": "sha256"}),
+            "signed_attrs": signed_attrs,
+            "signature_algorithm": algos.SignedDigestAlgorithm({"algorithm": "rsassa_pkcs1v15"}),
+            "signature": signature,
+        }
+    )
+    signed_data = cms.SignedData(
+        {
+            "version": "v3",
+            "digest_algorithms": [algos.DigestAlgorithm({"algorithm": "sha256"})],
+            "encap_content_info": cms.EncapsulatedContentInfo(
+                {"content_type": "tst_info", "content": core.ParsableOctetString(econtent)}
+            ),
+            "certificates": [a1x509.Certificate.load(cert_der)],
+            "signer_infos": [signer_info],
+        }
+    )
+    token = cms.ContentInfo({"content_type": "signed_data", "content": signed_data})
+    response = tsp.TimeStampResp({"status": {"status": "granted"}, "time_stamp_token": token})
+    return response.dump(), cert_pem
+
+
 @pytest.fixture
 def manifest(tmp_path):
     d = tmp_path / "pkg"
@@ -122,3 +220,82 @@ def test_verify_unstamped_manifest(manifest):
     ok, message = verify_timestamp(manifest)
     assert not ok
     assert "not timestamped" in message
+
+
+# --- full CMS signature verification (needs cryptography) ---
+
+
+def test_full_signature_verifies(manifest):
+    pytest.importorskip("cryptography")
+    from evidence_seal.timestamp import verify_token_signature
+
+    token, cert_pem = issue_signed_token(manifest["id"])
+    ok, message = verify_token_signature(token, cert_pem)
+    assert ok
+    assert "valid" in message and "Test TSA" in message
+
+
+def test_full_signature_via_verify_timestamp(manifest):
+    pytest.importorskip("cryptography")
+    token, cert_pem = issue_signed_token(manifest["id"])
+    stamped = apply_timestamp(manifest, token)
+    ok, message = verify_timestamp(stamped, tsa_cert=cert_pem)
+    assert ok
+    assert "TSA signature valid" in message
+
+
+def test_full_signature_wrong_cert_rejected(manifest):
+    pytest.importorskip("cryptography")
+    from evidence_seal.timestamp import verify_token_signature
+
+    token, _cert = issue_signed_token(manifest["id"])
+    _other_token, other_cert = issue_signed_token(manifest["id"])
+    # A different cert (different key, but same serial in our helper) must fail
+    # either the signer match or the cryptographic check.
+    ok, message = verify_token_signature(token, other_cert)
+    assert not ok
+    assert "TSA signature" in message
+
+
+def test_full_signature_missing_eku_rejected(manifest):
+    pytest.importorskip("cryptography")
+    from evidence_seal.timestamp import verify_token_signature
+
+    token, cert_pem = issue_signed_token(manifest["id"], timestamping_eku=False)
+    ok, message = verify_token_signature(token, cert_pem)
+    assert not ok
+    assert "timeStamping" in message
+
+
+def test_full_signature_gen_time_outside_validity_rejected(manifest):
+    import datetime
+
+    pytest.importorskip("cryptography")
+    from evidence_seal.timestamp import verify_token_signature
+
+    # gen_time in 2026 but the cert is only valid in 2020.
+    token, cert_pem = issue_signed_token(
+        manifest["id"],
+        validity=(
+            datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc),
+            datetime.datetime(2021, 1, 1, tzinfo=datetime.timezone.utc),
+        ),
+    )
+    ok, message = verify_token_signature(token, cert_pem)
+    assert not ok
+    assert "validity window" in message
+
+
+def test_full_signature_tampered_content_rejected(manifest):
+    pytest.importorskip("cryptography")
+    from evidence_seal.timestamp import verify_token_signature
+
+    # A token whose imprint is for a different id: the signature is valid over
+    # its own content, but apply_timestamp would refuse it, and here we confirm
+    # the signature itself is bound to the (wrong) content it was issued for.
+    token, cert_pem = issue_signed_token("a" * 64)
+    ok, _message = verify_token_signature(token, cert_pem)
+    assert ok  # signature is valid for its own content...
+    # ...but it does not bind to this manifest, which apply enforces.
+    with pytest.raises(ValueError, match="does not timestamp"):
+        apply_timestamp(manifest, token)

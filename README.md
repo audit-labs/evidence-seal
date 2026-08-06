@@ -93,12 +93,24 @@ evidence-seal timestamp apply pkg.manifest.json --token pkg.tsr
 
 evidence-seal timestamp verify pkg.manifest.json
 # -> timestamp OK: timestamped at 2026-08-06T09:00:00Z
+
+# Full verification: also check the token's CMS signature against the TSA cert
+evidence-seal timestamp verify pkg.manifest.json --tsa-cert freetsa.pem
+# -> timestamp OK: timestamped at 2026-08-06T09:00:00Z; TSA signature valid (CN=…)
+evidence-seal verify ./pkg --tsa-cert freetsa.pem   # same check inside a full verify
 ```
 
 `apply` refuses any token whose imprint is not this manifest's `id`. Because the
 `id` moves if a single byte changes, a token can never be transplanted onto
 tampered evidence — re-sealing after a change orphans the timestamp. A present
-timestamp is also checked automatically during `verify`.
+timestamp is checked automatically during `verify`.
+
+With `--tsa-cert`, the token's RFC 3161 CMS signature is verified against the
+supplied certificate: the certificate must carry the timeStamping extended key
+usage, identify the token's signer, be valid at `gen_time`, and its key must
+verify the signature over the timestamped content. This authenticates the token
+against a TSA certificate you trust; establishing that the certificate itself
+chains to a known root is left to you (supply a cert you already trust).
 
 ## The manifest
 
@@ -150,10 +162,12 @@ guarantee, **sign** the manifest (retain the public key out of band) and
 
 Two limits to be honest about:
 
-- **`timestamp verify` checks the binding, not the TSA's signature.** It proves
-  the stored token timestamps this manifest's `id`; it does not by itself verify
-  the TSA's own signature and certificate chain. Validate the token against the
-  TSA's certificate out of band (e.g. `openssl ts -verify`) for full assurance.
+- **`timestamp verify` checks the binding; `--tsa-cert` adds signature
+  verification but not chain-of-trust.** Without a cert, verification proves the
+  stored token timestamps this manifest's `id`. With `--tsa-cert`, it also
+  verifies the token's CMS signature, the timeStamping EKU, the signer match,
+  and validity at `gen_time`. It does **not** verify that the certificate chains
+  to a trusted root — supply a TSA certificate you already trust.
 - Private keys are written **unencrypted** — store them accordingly.
 
 ## Development
