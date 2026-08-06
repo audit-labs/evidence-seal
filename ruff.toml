@@ -1,0 +1,7 @@
+# Ruff configuration for evidence-seal.
+#
+# BLE001 is disabled because signature verification deliberately catches any
+# exception and reports it as a failed verification rather than crashing — an
+# invalid signature is a normal, expected outcome, not a program error.
+[lint]
+ignore = ["BLE001"]

@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "evidence-seal"
+version = "0.1.0"
+description = "Tamper-evident seals and chain of custody for audit evidence packages."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "Audit Labs" }]
+# The core seal/verify/chain path is pure standard library.
+dependencies = []
+
+[project.optional-dependencies]
+sign = ["cryptography>=42.0"]
+dev = ["pytest>=8.0", "ruff>=0.5", "cryptography>=42.0"]
+
+[project.scripts]
+evidence-seal = "evidence_seal.cli:main"
+
+[project.urls]
+Homepage = "https://audit-labs.dev"
+Repository = "https://github.com/audit-labs/evidence-seal"
+
+[tool.setuptools]
+packages = ["evidence_seal"]
