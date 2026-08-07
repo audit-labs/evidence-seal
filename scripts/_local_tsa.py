@@ -17,7 +17,7 @@ _REPO = _HERE.parent.parent
 sys.path.insert(0, str(_REPO / "tests"))
 sys.path.insert(0, str(_REPO))
 
-from test_timestamp import issue_signed_token  # noqa: E402
+from test_timestamp import issue_signed_token
 
 
 def main() -> None:
