@@ -28,10 +28,10 @@ timestamping needs `asn1crypto` (`evidence-seal[timestamp]`).
 
 ```bash
 # Core is pure standard library; extras add signing + timestamping.
-pip install "evidence-seal[sign,timestamp] @ git+https://github.com/audit-labs/evidence-seal"
+pip install "evidence-seal[sign,timestamp]"
 
 # Or, for the zero-dependency core, drop the extras:
-pip install "evidence-seal @ git+https://github.com/audit-labs/evidence-seal"
+pip install evidence-seal
 ```
 
 To hack on it from a clone instead, see [Development](#development).
