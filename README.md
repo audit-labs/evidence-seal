@@ -181,6 +181,12 @@ Further limits to be honest about:
   to a trusted root — supply a TSA certificate you already trust.
 - Private keys are written **unencrypted** — store them accordingly.
 
+## Stability
+
+`evidence-seal` is stable as of **v1.0.0** and follows [semantic versioning](https://semver.org).
+The `manifest.json` schema (`manifest_version`) and the CLI exit codes are a
+committed contract — neither changes in a breaking way without a major-version bump.
+
 ## Development
 
 ```bash
