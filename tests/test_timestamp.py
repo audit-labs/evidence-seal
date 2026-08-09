@@ -196,8 +196,9 @@ def test_apply_accepts_bare_token(manifest):
 
 def test_apply_refuses_token_for_other_id(manifest):
     wrong = "0" * 64
+    token = issue_token(wrong)
     with pytest.raises(ValueError, match="does not timestamp this manifest"):
-        apply_timestamp(manifest, issue_token(wrong))
+        apply_timestamp(manifest, token)
 
 
 def test_timestamp_does_not_change_manifest_id(manifest):
@@ -232,7 +233,8 @@ def test_full_signature_verifies(manifest):
     token, cert_pem = issue_signed_token(manifest["id"])
     ok, message = verify_token_signature(token, cert_pem)
     assert ok
-    assert "valid" in message and "Test TSA" in message
+    assert "valid" in message
+    assert "Test TSA" in message
 
 
 def test_full_signature_via_verify_timestamp(manifest):

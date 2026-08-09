@@ -18,6 +18,8 @@ from .manifest import (
 # Exit codes: 0 = intact/valid, 1 = tamper/verification failure, 2 = usage error.
 OK, FAILED, USAGE = 0, 1, 2
 
+_OUT_HELP = "write here instead of overwriting the manifest"
+
 
 def _default_manifest_path(directory: Path) -> Path:
     return directory.parent / f"{directory.name}.manifest.json"
@@ -79,6 +81,28 @@ def _cmd_seal(args) -> int:
     return OK
 
 
+def _print_drift(result) -> None:
+    for path in result.modified:
+        print(f"  MODIFIED  {path}")
+    for path in result.added:
+        print(f"  ADDED     {path}")
+    for path in result.removed:
+        print(f"  REMOVED   {path}")
+    if not result.id_ok:
+        print("  MANIFEST  id does not re-derive — the manifest itself was altered")
+    if not result.root_ok:
+        print("  MANIFEST  Merkle root does not match the file list")
+
+
+def _verify_timestamp_cli(manifest: dict, tsa_cert: str | None) -> bool:
+    from .timestamp import verify_timestamp
+
+    cert = Path(tsa_cert).read_bytes() if tsa_cert else None
+    ts_ok, ts_message = verify_timestamp(manifest, tsa_cert=cert)
+    print(f"  timestamp {'OK' if ts_ok else 'FAIL'}: {ts_message}")
+    return ts_ok
+
+
 def _cmd_verify(args) -> int:
     directory = Path(args.directory)
     manifest_path = Path(args.manifest) if args.manifest else _default_manifest_path(directory)
@@ -95,16 +119,7 @@ def _cmd_verify(args) -> int:
         exclude=_manifest_exclude(directory, manifest_path),
     )
 
-    for path in result.modified:
-        print(f"  MODIFIED  {path}")
-    for path in result.added:
-        print(f"  ADDED     {path}")
-    for path in result.removed:
-        print(f"  REMOVED   {path}")
-    if not result.id_ok:
-        print("  MANIFEST  id does not re-derive — the manifest itself was altered")
-    if not result.root_ok:
-        print("  MANIFEST  Merkle root does not match the file list")
+    _print_drift(result)
 
     status = OK
     if not result.intact:
@@ -115,14 +130,8 @@ def _cmd_verify(args) -> int:
         status = FAILED
 
     # Verify an embedded timestamp when present.
-    if manifest.get("timestamp"):
-        from .timestamp import verify_timestamp
-
-        cert = Path(args.tsa_cert).read_bytes() if args.tsa_cert else None
-        ts_ok, ts_message = verify_timestamp(manifest, tsa_cert=cert)
-        print(f"  timestamp {'OK' if ts_ok else 'FAIL'}: {ts_message}")
-        if not ts_ok:
-            status = FAILED
+    if manifest.get("timestamp") and not _verify_timestamp_cli(manifest, args.tsa_cert):
+        status = FAILED
 
     if status == OK:
         print(f"intact — {result.checked} files match the seal")
@@ -175,7 +184,7 @@ def _cmd_sign(args) -> int:
     try:
         manifest = load_manifest(args.manifest)
         signed = sign_manifest(manifest, args.key)
-    except (RuntimeError, FileNotFoundError, ValueError, OSError) as exc:
+    except (RuntimeError, ValueError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return USAGE
     write_manifest(signed, args.out or args.manifest)
@@ -189,7 +198,7 @@ def _cmd_ts_request(args) -> int:
     try:
         manifest = load_manifest(args.manifest)
         request = build_request(manifest["id"])
-    except (RuntimeError, FileNotFoundError, ValueError, KeyError, OSError) as exc:
+    except (RuntimeError, ValueError, KeyError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return USAGE
     out = args.out or f"{args.manifest}.tsq"
@@ -210,7 +219,7 @@ def _cmd_ts_apply(args) -> int:
     try:
         manifest = load_manifest(args.manifest)
         stamped = apply_timestamp(manifest, load_der(args.token))
-    except (RuntimeError, FileNotFoundError, ValueError, OSError) as exc:
+    except (RuntimeError, ValueError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return USAGE
     write_manifest(stamped, args.out or args.manifest)
@@ -228,7 +237,7 @@ def _cmd_ts_submit(args) -> int:
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return FAILED
-    except (RuntimeError, FileNotFoundError, KeyError, OSError) as exc:
+    except (RuntimeError, KeyError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return USAGE
     write_manifest(stamped, args.out or args.manifest)
@@ -288,7 +297,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_sign = sub.add_parser("sign", help="sign an existing manifest")
     p_sign.add_argument("manifest")
     p_sign.add_argument("--key", required=True, metavar="PRIVATE_KEY")
-    p_sign.add_argument("--out", help="write here instead of overwriting the manifest")
+    p_sign.add_argument("--out", help=_OUT_HELP)
     p_sign.set_defaults(func=_cmd_sign)
 
     _add_timestamp_commands(sub)
@@ -307,14 +316,14 @@ def _add_timestamp_commands(sub) -> None:
     p_apply = ts.add_parser("apply", help="bind a TSA response/token into the manifest")
     p_apply.add_argument("manifest")
     p_apply.add_argument("--token", required=True, metavar="TSR", help="TSA response or token (DER)")
-    p_apply.add_argument("--out", help="write here instead of overwriting the manifest")
+    p_apply.add_argument("--out", help=_OUT_HELP)
     p_apply.set_defaults(func=_cmd_ts_apply)
 
     p_submit = ts.add_parser("submit", help="request, POST to a TSA, and bind in one step")
     p_submit.add_argument("manifest")
     p_submit.add_argument("--tsa", required=True, metavar="URL", help="RFC 3161 TSA endpoint")
     p_submit.add_argument("--timeout", type=float, default=30.0, help="network timeout (seconds)")
-    p_submit.add_argument("--out", help="write here instead of overwriting the manifest")
+    p_submit.add_argument("--out", help=_OUT_HELP)
     p_submit.set_defaults(func=_cmd_ts_submit)
 
     p_tsv = ts.add_parser("verify", help="verify the manifest's embedded timestamp")

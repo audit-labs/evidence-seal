@@ -17,7 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(dirname "$SCRIPT_DIR")"
 
 # Prefer the project venv; fall back to whatever is on PATH.
-if [ -x "$REPO/.venv/bin/python" ]; then
+if [[ -x "$REPO/.venv/bin/python" ]]; then
   PY="$REPO/.venv/bin/python"
 else
   PY="$(command -v python3 || command -v python)"
@@ -37,7 +37,7 @@ assert_exit() {
   printf '$ %s\n' "$*"
   eval "$*" >"$W/out" 2>&1; local rc=$?
   sed 's/^/   /' "$W/out"
-  if [ "$rc" = "$exp" ]; then
+  if [[ "$rc" == "$exp" ]]; then
     printf '   \033[32m✓ PASS\033[0m — %s (exit %s)\n' "$label" "$rc"; pass=$((pass+1))
   else
     printf '   \033[31m✗ FAIL\033[0m — %s (exit %s, expected %s)\n' "$label" "$rc" "$exp"; fail=$((fail+1))
