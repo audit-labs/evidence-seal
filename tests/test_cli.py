@@ -85,7 +85,8 @@ def test_timestamp_request_apply_verify(pkg, tmp_path):
 
     req = tmp_path / "m.tsq"
     assert main(["timestamp", "request", str(manifest), "--out", str(req)]) == OK
-    assert req.exists() and req.stat().st_size > 0
+    assert req.exists()
+    assert req.stat().st_size > 0
 
     manifest_id = json.loads(manifest.read_text())["id"]
     tsr = tmp_path / "resp.tsr"
