@@ -1,0 +1,15 @@
+# Tag-triggered PyPI publish, ported from the GitHub workflow (which used
+# OIDC trusted publishing; here twine authenticates with the PYPI_TOKEN
+# build secret).
+jobs:
+  publish:
+    tags: "v*"
+    steps:
+      - |
+        set -e
+        [ -n "$PYPI_TOKEN" ] || { echo "PYPI_TOKEN secret not set: printf %s TOKEN | gitbay repo secret set <repo> PYPI_TOKEN"; exit 1; }
+        python3 -m venv .venv
+        .venv/bin/pip install -q build twine
+        .venv/bin/python -m build
+        .venv/bin/twine check dist/*
+        TWINE_USERNAME=__token__ TWINE_PASSWORD="$PYPI_TOKEN" .venv/bin/twine upload --non-interactive dist/*
