@@ -58,13 +58,18 @@ def _public_hex(public_key) -> str:
     return raw.hex()
 
 
-def sign_manifest(manifest: dict, private_key_path: str | Path) -> dict:
-    """Return a copy of *manifest* with a ``signature`` block attached."""
+def sign_manifest(
+    manifest: dict, private_key_path: str | Path, password: bytes | None = None
+) -> dict:
+    """Return a copy of *manifest* with a ``signature`` block attached.
+
+    *password* unlocks an encrypted PEM private key.
+    """
     _require_crypto()
     from cryptography.hazmat.primitives import serialization
 
     private = serialization.load_pem_private_key(
-        Path(private_key_path).read_bytes(), password=None
+        Path(private_key_path).read_bytes(), password=password
     )
     signature = private.sign(canonical_bytes(manifest))
     signed = dict(manifest)

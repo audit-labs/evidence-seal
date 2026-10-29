@@ -192,6 +192,32 @@ def _cmd_sign(args) -> int:
     return OK
 
 
+def _cmd_signoffs(args) -> int:
+    from .signoffs import verify_folder
+    from .sshsig import SignatureError
+
+    try:
+        result = verify_folder(args.directory, set(args.trust))
+    except SignatureError as exc:
+        print(f"FAILED: {exc}", file=sys.stderr)
+        return FAILED
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return USAGE
+    print(f"roster OK: {result['firm']} signed by {result['roster_signed_by']}")
+    for res in result["statements"]:
+        status = "OK  " if res["ok"] else "FAIL"
+        detail = f" ({res['reason']})" if res.get("reason") else ""
+        print(f"  {status} {res.get('role')} {res.get('item')} by {res.get('signer')}{detail}")
+    for item, versions in sorted(result["items"].items()):
+        complete = any(v["complete"] for v in versions.values())
+        print(f"  item {item}: {'reviewed' if complete else 'not independently reviewed'}")
+    if result["invalid"]:
+        print(f"{result['invalid']} statement(s) failed verification", file=sys.stderr)
+        return FAILED
+    return OK
+
+
 def _cmd_ts_request(args) -> int:
     from .timestamp import build_request
 
@@ -299,6 +325,19 @@ def _build_parser() -> argparse.ArgumentParser:
     p_sign.add_argument("--key", required=True, metavar="PRIVATE_KEY")
     p_sign.add_argument("--out", help=_OUT_HELP)
     p_sign.set_defaults(func=_cmd_sign)
+
+    p_signoffs = sub.add_parser(
+        "signoffs", help="verify a signed team roster and sign-off statements in a folder"
+    )
+    p_signoffs.add_argument("directory", help="folder with team.json, team.json.sig, signoffs.jsonl")
+    p_signoffs.add_argument(
+        "--trust",
+        action="append",
+        required=True,
+        metavar="FINGERPRINT",
+        help="SHA256 fingerprint of a firm key to trust (from outside the folder)",
+    )
+    p_signoffs.set_defaults(func=_cmd_signoffs)
 
     _add_timestamp_commands(sub)
     return parser

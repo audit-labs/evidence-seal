@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `evidence_seal.sshsig`: SSH signatures (OpenSSH `PROTOCOL.sshsig`) with Ed25519 keys, interchangeable with `ssh-keygen -Y`.
+- `evidence-seal signoffs <dir> --trust <fingerprint>`: offline verification of a firm-signed team roster (`team.json`, `team.json.sig`) and signed sign-off statements (`signoffs.jsonl`).
+- `sign_manifest(..., password=...)` for encrypted PEM keys.
+
 ## [1.0.0] - 2026-08-07
 
 First stable release. The `manifest.json` schema (`manifest_version`) and the CLI

@@ -78,6 +78,24 @@ evidence-seal verify ./pkg --pubkey acme.pub                # require this signe
 Without `--pubkey`, a present signature is still checked for validity; with it,
 the signer's key must also match, proving *identity* and not just integrity.
 
+### Sign-offs (who reviewed what)
+
+An engagement can carry a firm-signed team roster and signed preparer/reviewer
+statements (written by audit-workbench). Verify them offline, trusting the firm
+key by a fingerprint you obtained outside the folder:
+
+```bash
+evidence-seal signoffs ./deliverable --trust SHA256:Xm2…firm-key-fingerprint
+```
+
+The folder holds `team.json` (members, roles, and `ssh-ed25519` keys),
+`team.json.sig` (SSH signature by the firm key, namespace
+`audit-roster@audit-labs`), and `signoffs.jsonl` (one signed statement per line,
+namespace `audit-signoff@audit-labs`). Signatures use the OpenSSH `SSHSIG`
+format, so `ssh-keygen -Y verify` can check them too. An item counts as reviewed
+only when a reviewer who is a different roster member from the preparer signed
+the same content. Exit code 1 if the roster or any statement fails.
+
 ### Timestamping (trusted time)
 
 A signature says *who*; a timestamp says *when*, attested by an independent
