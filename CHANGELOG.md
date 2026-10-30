@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-29
+
 ### Added
 
 - `evidence_seal.sshsig`: SSH signatures (OpenSSH `PROTOCOL.sshsig`) with Ed25519 keys, interchangeable with `ssh-keygen -Y`.
@@ -32,5 +34,6 @@ a major-version bump.
   0 (intact), 1 (tamper / broken / invalid signature), 2 (usage).
 - PyPI trusted-publishing release workflow.
 
+[1.1.0]: https://github.com/audit-labs/evidence-seal/releases/tag/v1.1.0
 [1.0.0]: https://github.com/audit-labs/evidence-seal/releases/tag/v1.0.0
 [0.1.0]: https://github.com/audit-labs/evidence-seal/releases/tag/v0.1.0
