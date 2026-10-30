@@ -117,13 +117,8 @@ class VerifyResult:
     @property
     def intact(self) -> bool:
         """True only if nothing drifted and the manifest is internally sound."""
-        return (
-            not self.modified
-            and not self.added
-            and not self.removed
-            and self.id_ok
-            and self.root_ok
-        )
+        drifted = self.modified or self.added or self.removed
+        return not drifted and self.id_ok and self.root_ok
 
 
 def verify_manifest(
