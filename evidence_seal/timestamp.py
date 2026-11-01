@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import base64
 import secrets
+import urllib.parse
 import urllib.request
 from datetime import timezone
 from pathlib import Path
@@ -76,6 +77,9 @@ def submit(request_der: bytes, tsa_url: str, timeout: float = 30.0) -> bytes:
 
     Network call — the caller is responsible for choosing a trusted TSA URL.
     """
+    scheme = urllib.parse.urlsplit(tsa_url).scheme.lower()
+    if scheme not in ("http", "https"):
+        raise ValueError(f"TSA URL must use http or https: {tsa_url}")
     req = urllib.request.Request(
         tsa_url,
         data=request_der,

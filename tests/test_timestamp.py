@@ -17,6 +17,7 @@ from evidence_seal.timestamp import (
     apply_timestamp,
     build_request,
     parse_token,
+    submit,
     verify_timestamp,
 )
 
@@ -221,6 +222,13 @@ def test_verify_unstamped_manifest(manifest):
     ok, message = verify_timestamp(manifest)
     assert not ok
     assert "not timestamped" in message
+
+
+def test_submit_rejects_non_http_url(manifest, tmp_path):
+    target = tmp_path / "tsa.tsr"
+    target.write_bytes(b"")
+    with pytest.raises(ValueError, match="http or https"):
+        submit(build_request(manifest["id"]), target.as_uri())
 
 
 # --- full CMS signature verification (needs cryptography) ---
